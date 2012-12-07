@@ -28,15 +28,62 @@ http.createServer(function(req,res)
 	}
 	var pathname = parseURL(req.url).pathname;
 	console.log(req.url);
+	//@TODO it is shit cookie test. need to find cookie first
+	if(pathname.indexOf('/renren') == 0 && pathname != '/renren/login' && pathname != 'renren/redirect')//check cookie
+	{
+		
+		if(req.headers.cookie)//no cookie
+		{			
+			var query_json = querystring.parse(req.headers.cookie,';');
+			if(query_json.id && userList[query_json.id])
+			{
+				console.log("welcome old user");			
+			}
+			else
+			{
+				console.log("no cookie or not in list");
+				res.writeHead(302,{'Location':'/renren/login'});
+				res.end();
+			}
+							
+		}
+
+	}
 	switch(pathname)
 	{
-		case '/renren':
-			if(res)//no cookie
+		case '/renren':				
+			var query_id = querystring.parse(parseURL(req.url).query).id;
+			
+			if(userList[query_id])
 			{
-				console.log(res);
-				
+				var id = query_id;
+				res.writeHead(200,
+				{
+					'Content-Type'	:	'text/html',
+					'Set-cookie'	:	'id='+id+'; Expires=Wed, 13-Jan-2021 22:23:01 GMT;HttpOnly'
+				});
+				res.end('welcome '+ id);
 			}
-
+			else
+			{
+				console.log("not  in list");
+				res.writeHead(302,{'Location':'/renren/login'});
+				res.end();
+			}
+			/*
+			if(req.headers.cookie)//no cookie
+			{			
+				var query_json = querystring.parse(req.headers.cookie,';');
+				if(query_json.id)
+				{
+					if(userList[query_json.id])
+					{
+						id = query_json.id;
+					}
+				}
+								
+			}
+			*/
 			var mycode = querystring.parse(parseURL(req.url).query).code;
 			var opts =
 			{
@@ -115,7 +162,7 @@ http.createServer(function(req,res)
 			{
 				grant_type	:	'authorization_code',	
 				client_id	:	'7b7568ae17db4eff94495695d84a8f06',
-				redirect_uri	:	'http://42.121.108.75/renren',
+				redirect_uri	:	'http://42.121.108.75/renren/redirect',
 				client_secret	:	'688c934a8acc42c8b6b55661a7231702',
 				code		:	mycode		
 			}
@@ -137,6 +184,7 @@ http.createServer(function(req,res)
 				userList[id] = json;
 				mya_t = json.access_token;
 				//console.log(userList);
+				/*
 				res.writeHead(200,
 					{
 						'Content-Type'	:	'text/html',
@@ -144,6 +192,10 @@ http.createServer(function(req,res)
 					});
 				res.end('<form method="get" action="/renren/send"><input type="text" name="text"/>'
 				+'<input type="submit" value="submit"/></form>');
+				*/
+				console.log("redirect ..");
+				res.writeHead(302,{'Location':'/renren?id='+id});
+				res.end();
 			});			
 			
 			break;

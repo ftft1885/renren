@@ -26,9 +26,14 @@ http.createServer(function(req,res)
 			res.end(stdout);
 		});
 	}
+
+	var isLogin = false;
+	var id = "";
+
 	var pathname = parseURL(req.url).pathname;
 	console.log(req.url);
-	//@TODO it is shit cookie test. need to find cookie first
+
+	//check cookie
 	if(pathname.indexOf('/renren') == 0 && pathname != '/renren/login' && pathname != 'renren/redirect')//check cookie
 	{
 		
@@ -37,53 +42,48 @@ http.createServer(function(req,res)
 			var query_json = querystring.parse(req.headers.cookie,';');
 			if(query_json.id && userList[query_json.id])
 			{
-				console.log("welcome old user");			
-			}
-			else
-			{
-				console.log("no cookie or not in list");
-				res.writeHead(302,{'Location':'/renren/login'});
-				res.end();
-			}
-							
+				id = query_json.id;
+				isLogin = true;			
+			}							
 		}
 
 	}
 	switch(pathname)
 	{
-		case '/renren':				
-			var query_id = querystring.parse(parseURL(req.url).query).id;
-			
-			if(userList[query_id])
+		case '/renren':			
+			if(isLogin)
 			{
-				var id = query_id;
-				res.writeHead(200,
+				res.writeHead(200,{'Content-Type':'text/html'});
+				getMainPage(id,function(html)
 				{
-					'Content-Type'	:	'text/html',
-					'Set-cookie'	:	'id='+id+'; Expires=Wed, 13-Jan-2021 22:23:01 GMT;HttpOnly'
+					res.end(html);
 				});
-				res.end('welcome '+ id);
-			}
-			else
+				//res.end('welcome '+ id);
+			}		
+			else if(parseURL(req.url).query)
 			{
-				console.log("not  in list");
-				res.writeHead(302,{'Location':'/renren/login'});
-				res.end();
-			}
-			/*
-			if(req.headers.cookie)//no cookie
-			{			
-				var query_json = querystring.parse(req.headers.cookie,';');
-				if(query_json.id)
+					
+				var query_id = querystring.parse(parseURL(req.url).query).id;
+				
+				if(userList[query_id])
 				{
-					if(userList[query_json.id])
+					id = query_id;
+					res.writeHead(200,
 					{
-						id = query_json.id;
-					}
+						'Content-Type'	:	'text/html',
+						'Set-cookie'	:	'id='+id+'; Expires=Wed, 13-Jan-2021 22:23:01 GMT;HttpOnly'
+					});
+					res.end('welcome '+ id);
 				}
-								
-			}
-			*/
+				else
+				{
+					console.log("not  in list");
+					res.writeHead(302,{'Location':'/renren/login'});
+					res.end();
+				}
+
+			}		
+			
 			var mycode = querystring.parse(parseURL(req.url).query).code;
 			var opts =
 			{
@@ -96,6 +96,7 @@ http.createServer(function(req,res)
 			var mypath = querystring.stringify(opts);
 			//console.log("mypath = " + mypath);
 			/*
+			   
 			var post_opts = 
 			{				
 				hostname:'graph.renren.com',
@@ -131,7 +132,7 @@ http.createServer(function(req,res)
 				client_id	:	'7b7568ae17db4eff94495695d84a8f06',
 				redirect_uri	:	'http://42.121.108.75/renren/redirect',
 				response_type	:	'code',
-				scope		:	'status_update'
+				scope		:	'status_update+'+'read_user_feed'
 			};
 			//var str = querystring.stringify(opts); err:will be encode
 			var str = [];
@@ -141,22 +142,12 @@ http.createServer(function(req,res)
 				str[i++] =  key + "=" + opts[key];
 			};
 			str = str.join('&');
-			var url = host + "?" + str;
-			/*
-			var url2 = 'http://graph.renren.com/oauth/grant?client_id=7b7568ae17db4eff94495695d84a8f06&redirect_uri=http://42.121.108.75/renren/redirect&response_type=code&scope=status_update';
-
-			for (var i = 0; i < url2.length; i++)
-			{
-				if(url[i] == url2[i]) console.log('yes');
-				else console.log("no"+ i + ":"+ url[i] + ":"+ url2[i]);
-			}
-			*/
-
+			var url = host + "?" + str;		
 			var html = '<a href="'+url+'">login oauth</a>';
 			res.end(html);
 			break;
 
-		case '/renren/redirect'://for redirect
+		case '/renren/redirect'://for redirect and get access_token
 			var mycode = querystring.parse(parseURL(req.url).query).code;
 			var opts =
 			{
@@ -233,12 +224,142 @@ http.createServer(function(req,res)
 				//console.log(result.text);
 			});
 			break;
+
+		case '/renren/feed_get':
+			
+			var id = '285922258';
+			console.log("method = "+ req.method);
+			
+			console.log(req);
+			var postdata = "";
+			var opts = {
+				v	:	'1.0',
+				format	:	'JSON'
+			}
+			
+			req.on('data',function(data)//only one time
+			{
+				postdata += data;//data is a buffer				
+				var post_opts = querystring.parse(postdata);				
+				for(var key in post_opts)
+				{
+					opts[key] = post_opts[key];
+				}
+				if(opts.method == 'feed.get')	opts.type = '10';
+				console.log(opts);
+
+				var keys = [],sig = "";
+				for(var i in opts)
+				{
+					keys.push(i);
+				}
+				keys.sort();
+				keys.forEach(function(k)
+				{
+					sig += k + "=" + opts[k];
+				});
+				sig += '688c934a8acc42c8b6b55661a7231702';
+				opts['sig'] = md5(sig);
+				
+				var mypath = querystring.stringify(opts);//url need to be encoded
+				//console.log(mypath);
+				//console.log(sig);
+				agent.post('http://api.renren.com/restserver.do')
+				.send(mypath).end(function(err,result)
+				{
+					//console.log(result);
+					res.end(result.text);
+				});
+
+
+			});
+			/*
+			{
+				var opts = {};
+				opts['v'] = "1.0";
+				//opts['method'] = "users.getInfo";
+				opts['method'] = "feed.get";
+				opts['format'] = 'JSON';
+				//opts['access_token'] = mya_t;
+				opts['access_token'] = userList[id].access_token;
+				
+				//console.log("access_token  = " + opts['access_token']);
+
+				opts['type'] = '10';
+				//opts['status'] = 'this is a status from perl written by ft';
+
+				var keys = [],sig = "";
+				for(var i in opts)
+				{
+					keys.push(i);
+				}
+				keys.sort();
+				keys.forEach(function(k)
+				{
+					sig += k + "=" + opts[k];
+				});
+				sig += '688c934a8acc42c8b6b55661a7231702';
+				opts['sig'] = md5(sig);
+				//opts['status'] = 'this is a status from perl written by ft';
+				var mypath = querystring.stringify(opts);//url need to be encoded
+				//console.log(mypath);
+				//console.log(sig);
+				agent.post('http://api.renren.com/restserver.do')
+				.send(mypath).end(function(err,result)
+				{
+					//console.log(result);
+					res.end(result.text);
+				});
+
+			}
+			*/
+			break;
 	}
 	
 }).listen(port,function(err)
 {
 	console.log("server on " + port);
 });
+
+function getInfoFromRenren(req_opts,callback)
+{
+	//!id(access_token) and method is required
+	//this func will post to localhost/renren/getinfo
+	
+	var postdata = 
+	{
+		access_token	:	userList[req_opts.id].access_token,
+		method		:	req_opts.method
+	}
+	postdata = querystring.stringify(postdata);
+	console.log(postdata);
+	var html = "";
+	var opts = 
+	{
+		headers		:	{'Content-Length':postdata.length},
+		path		:	'/renren/feed_get',
+		method		:	'POST',
+
+	}
+	req = http.request(opts,function(res)
+	{
+		res.on('data',function(data)
+		{
+			//console.log(data);
+			html += data;
+			//callback(html);
+		});
+		
+		res.on('end',function()
+		{
+			//console.log(html+"");
+			callback(html);
+		});		
+	});
+	req.write(postdata+'\n');
+	req.end();
+
+}
 
 function perl(filename,callback)
 {	
@@ -273,4 +394,111 @@ function perl(filename,callback)
 
 	});
 
+}
+
+function getHTMLHead(title)
+{
+	var html = "";
+	html += '<!DOCTYPE html>';
+	html += '<html>';
+	html += '<head>';
+	html += '<meta id="viewport" name="viewport" content="width=device-width,initial-scale=1,user-scalable=no" charset="utf-8">';
+	html += '<link type="text/css" rel="stylesheet" href="./css/renren.css"></link>';
+	html += '<title>' + title + '</title>';
+	html += '</head>';
+	html += '<body>';
+	return html;
+}
+
+function getHTMLDiv(demo)
+{
+	var div = '<div class="div_feed">';
+	div += demo.name + '<br>';
+	div += demo.message;
+
+	div += '</div>';
+	return div;
+}
+
+function getMainPage(id,callback)//can be just one func
+{
+	
+	var opts = {
+		id		:	id,
+		method		:	'feed.get'
+	}
+	getInfoFromRenren(opts,function(renrenjson)
+	{
+		var html = getHTMLHead('main page');
+		
+		var json = JSON.parse(renrenjson);//???
+		//console.log(json);
+		for(var key in json)
+		{	
+			var demo = json[key];
+			console.log(demo);
+			html += getHTMLDiv(demo);
+		}
+		
+	
+		html += '</body>';
+		html += '</html>';
+		callback(html);	
+	});
+	/*
+	var postdata = 
+	{
+		id	:	id,
+		method	:	'feed.get'
+	}
+	postdata = querystring.stringify(postdata);
+	console.log(postdata);
+	var html = "";
+	var opts = 
+	{
+		headers		:	{'Content-Length':postdata.length},
+		path		:	'/renren/feed_get',
+		method		:	'POST',
+
+	}
+	req = http.request(opts,function(res)
+	{
+		res.on('data',function(data)
+		{
+			//console.log(data);
+			html += data;
+			//callback(html);
+		});
+		
+		res.on('end',function()
+		{
+			//console.log(html+"");
+			callback(html);
+		});
+		
+	});
+	req.write(postdata+'\n');
+	req.end();
+	*/
+}
+
+function getMainPage2(id,callback)
+{
+	var html = ""; 
+	http.get('/renren/feed_get',function(res)
+	{	
+		var alldata = "";
+		res.on('data',function(data)
+		{
+			alldata += data;
+		});
+		res.on('end',function()
+		{
+			//console.log(alldata+"");
+			html = alldata;
+			callback(html);
+		});
+	
+		
+	});
 }
